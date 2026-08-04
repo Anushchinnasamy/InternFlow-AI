@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: internflow_app
+      POSTGRES_PASSWORD: internflow_dev_pw
+      POSTGRES_DB: internflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - internflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U internflow_app -d internflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://internflow_app:internflow_dev_pw@db:5432/internflow?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: 8h
+      PORT: 4000
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL:-gemini-3.6-flash}
+      UPLOAD_DIR: ./uploads
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-Intern Flow <onboarding@resend.dev>}
+    volumes:
+      - internflow_uploads:/app/uploads
+    # Fresh containers have no schema yet — apply existing migrations
+    # non-interactively before starting (prisma migrate deploy, not `dev`).
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+
+volumes:
+  internflow_pgdata:
+  internflow_uploads:
