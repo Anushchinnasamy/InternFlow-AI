@@ -24,7 +24,11 @@ export interface AuditParams<T> {
   // mutation's result is accepted too.
   entityId: string | ((result: T) => string);
   before?: unknown;
-  after?: unknown;
+  // Same reasoning as entityId above: some mutations (e.g. an atomic
+  // server-side JSON merge) only know the true post-write state once the
+  // mutation has run, not before — a caller-supplied fixed value would be
+  // stale/wrong in that case.
+  after?: unknown | ((result: T) => unknown);
   ip?: string | null;
 }
 
@@ -32,6 +36,7 @@ export async function withAudit<T>(params: AuditParams<T>, mutation: () => Promi
   const result = await mutation();
 
   const entityId = typeof params.entityId === "function" ? params.entityId(result) : params.entityId;
+  const after = typeof params.after === "function" ? (params.after as (result: T) => unknown)(result) : params.after;
 
   await prisma.auditEvent.create({
     data: {
@@ -41,7 +46,7 @@ export async function withAudit<T>(params: AuditParams<T>, mutation: () => Promi
       entity: params.entity,
       entityId,
       before: toJsonInput(params.before),
-      after: toJsonInput(params.after),
+      after: toJsonInput(after),
       ip: params.ip ?? null,
     },
   });

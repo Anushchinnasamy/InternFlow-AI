@@ -69,7 +69,6 @@ router.patch("/:id/checklist", authenticate, requireRole(...PERMISSION_MATRIX.ta
 
   const actor = { actorId: req.user!.userId, role: req.user!.role, ip: req.ip ?? null };
   const currentChecklist = (task.checklist as Record<string, string> | null) ?? {};
-  const updatedChecklist = { ...currentChecklist, [item]: status };
 
   const updated = await withAudit(
     {
@@ -78,9 +77,25 @@ router.patch("/:id/checklist", authenticate, requireRole(...PERMISSION_MATRIX.ta
       entity: "Task",
       entityId: task.id,
       before: { checklist: currentChecklist },
-      after: { checklist: updatedChecklist },
+      after: (result: { checklist: Prisma.JsonValue }) => ({ checklist: result.checklist }),
     },
-    () => prisma.task.update({ where: { id: task.id }, data: { checklist: updatedChecklist as Prisma.InputJsonValue } })
+    async () => {
+      // "Provision all" fires one PATCH per checklist item in parallel — a
+      // plain read-then-write here (read task.checklist, merge one key,
+      // write the whole object back) loses updates: multiple requests can
+      // all read the same pre-update snapshot before any write lands, so
+      // whichever write commits last silently clobbers the others (only
+      // one item ends up persisted instead of all four). Merging via
+      // Postgres's jsonb `||` in a single UPDATE keeps each item's write
+      // atomic and race-safe regardless of arrival order.
+      const rows = await prisma.$queryRaw<{ checklist: Record<string, string> }[]>`
+        UPDATE "Task"
+        SET checklist = COALESCE(checklist, '{}'::jsonb) || jsonb_build_object(${item}::text, ${status}::text)
+        WHERE id = ${task.id}
+        RETURNING checklist
+      `;
+      return { ...task, checklist: rows[0].checklist as Prisma.InputJsonValue };
+    }
   );
 
   res.json({ task: updated });
