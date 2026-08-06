@@ -61,6 +61,13 @@ These are the target service-level timelines:
 - Anything about pay, employment status, or a decision you disagree with:
   Program Owner
 
+## How do I confirm a referral (as a Mentor)?
+Go to the Candidates page — a "Pending Your Confirmation" section lists every
+referral naming you as mentor that's still awaiting your decision. Each row
+has a Confirm and a Decline button. Confirming moves the referral into HR
+review immediately. Declining requires a short reason, which is shared with
+the referrer.
+
 ## Can I extend an internship?
 Yes — the Mentor can request an extension with a new proposed end date and a
 justification. An extension only takes effect once BOTH HR and the Program
