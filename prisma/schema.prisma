@@ -1,0 +1,483 @@
+// Intern Flow — Prisma schema (Day 1 starting point)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  REFERRER
+  CANDIDATE
+  MENTOR
+  HR
+  PROGRAM_OWNER
+  ADMIN_SECURITY
+  IT_ADMIN
+  LEGAL
+  SYSADMIN
+}
+
+enum AiActionType {
+  RESUME_PARSE          // 1. extract name/email/phone/education/skills
+  FORM_PREFILL          // 2. prefill referral form from parsed resume
+  CONFIDENCE_SCORE      // 3. per-field confidence score
+  DUPLICATE_DETECTION   // 4. exact/fuzzy duplicate candidate match
+  MISSING_INFO_CHECK    // 5. gaps/inconsistencies in submitted data
+  SMART_VALIDATION      // 6. implausible-entry hints beyond format checks
+  EMAIL_DRAFT           // 7. contextual email drafting, human-reviewed
+  SLA_RISK_PREDICTION   // 8. predicts likely SLA breach before it happens
+  CHATBOT_ANSWER        // 9. FAQ chatbot response
+  MATCH_SCORE           // 10. resume-vs-JD match scoring + hire recommendation
+}
+
+// Not in the originally provided schema — added for the match-scoring
+// add-on. HIRE/MAYBE/REJECT is the AI's advisory read; see
+// EvaluationDecision for the separate, human-only field that actually
+// moves anything forward.
+enum EvaluationRecommendation {
+  HIRE
+  MAYBE
+  REJECT
+}
+
+// The human call — set only by POST /evaluations/:id/decide, never by the
+// AI. Deliberately a different enum (and a different column) from
+// EvaluationRecommendation so overriding one can never silently touch the
+// other.
+enum EvaluationDecision {
+  REJECT
+  SHORTLIST
+  SELECT
+}
+
+enum InternshipStatus {
+  DRAFT
+  SUBMITTED
+  MENTOR_REVIEW
+  HR_REVIEW
+  APPROVED
+  JOINING_PENDING
+  JOINING_SUBMITTED
+  VERIFIED
+  ID_ISSUED
+  NDA_PENDING
+  NDA_SIGNED
+  ACCESS_PROVISIONED
+  READY_TO_START
+  DELAYED
+  ACTIVE
+  EXTENDED
+  COMPLETED
+  CLOSED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  CANCELLED
+}
+
+enum DocumentType {
+  RESUME
+  NDA
+  CONFIRMATION_LETTER
+  CERTIFICATE
+  GOVT_ID
+  EDUCATION_CERT
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  role          Role
+  // Not in the originally provided schema — added because Day 1 requires
+  // bcrypt-hashed password auth and the model had no credential field.
+  passwordHash  String
+  department    String?
+  site          String?
+  managerId     String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  // Not in the originally provided schema — added Frontend Day F5 for the
+  // Settings page. Holds { timezone?, ...client-side prefs } as one JSON
+  // blob rather than a column per preference, since only timezone needs
+  // server-side persistence today (theme/notification prefs can stay
+  // client-only) and this avoids a migration every time a new preference
+  // is added.
+  preferences   Json?
+
+  referrals     Referral[]   @relation("Referrer")
+  mentoredReferrals   Referral[]   @relation("ReferralMentor")
+  mentoredInternships Internship[] @relation("Mentor")
+  auditEvents   AuditEvent[]
+  // Not in the originally provided schema — added Day 3 for AiAction.actorId
+  // above.
+  aiActions     AiAction[]
+  // Not in the originally provided schema — added because a CANDIDATE-role
+  // login has no other way to find "their" Candidate profile row (Candidate
+  // has no link back to User otherwise). Linked at registration by matching
+  // email.
+  candidateProfile Candidate? @relation("CandidateUser")
+}
+
+model Candidate {
+  id            String   @id @default(cuid())
+  fullName      String
+  email         String
+  phone         String
+  dob           DateTime
+  nationality   String
+  city          String
+  qualification String
+  institution   String
+  skills        String[]
+  linkedinUrl   String?
+  createdAt     DateTime @default(now())
+
+  // Not in the originally provided schema — see User.candidateProfile.
+  userId        String?  @unique
+  user          User?    @relation("CandidateUser", fields: [userId], references: [id])
+
+  referrals     Referral[]
+  joiningRecord JoiningRecord?
+  evaluations   Evaluation[]
+}
+
+model Referral {
+  id                String   @id @default(cuid())
+  candidateId       String
+  candidate         Candidate @relation(fields: [candidateId], references: [id])
+  referrerId        String
+  referrer          User @relation("Referrer", fields: [referrerId], references: [id])
+  // Not in the originally provided schema — added because mentor-confirm
+  // needs to check "own referrals" before an Internship (which normally
+  // carries mentorId) exists yet.
+  mentorId          String
+  mentor            User @relation("ReferralMentor", fields: [mentorId], references: [id])
+
+  unpaidConsent     Boolean
+  inPersonReady     Boolean
+  locationAligned   Boolean
+  priorRelationship String?  // relationship declaration
+  conflictDeclared  Boolean  @default(false)
+
+  projectTitle      String
+  projectOverview   String
+  proposedStart     DateTime
+  proposedEnd       DateTime
+  site              String
+  department        String
+
+  status            InternshipStatus @default(DRAFT)
+  aiParsed          Json?    // confidence scores, overrides
+  createdAt         DateTime @default(now())
+  // Not in the originally provided schema — added for HR's
+  // RETURN_FOR_CORRECTION path (Day 3): while non-empty, the override
+  // endpoint restricts edits to exactly these field names.
+  correctionFields  String[] @default([])
+
+  internship        Internship?
+  tasks             Task[]
+}
+
+model Internship {
+  id                String   @id @default(cuid())
+  referralId        String   @unique
+  referral          Referral @relation(fields: [referralId], references: [id])
+  mentorId          String
+  mentor            User @relation("Mentor", fields: [mentorId], references: [id])
+
+  nonWorkerId       String?
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  status            InternshipStatus @default(SUBMITTED)
+
+  adAccountActive   Boolean  @default(false)
+  adDeactivatedAt   DateTime?
+  badgeNumber       String?
+  // Not in the originally provided schema — added Day 5 for AD provisioning:
+  // the ManualADAdapter's opaque handle for the provisioned account (a real
+  // Graph API adapter would return theirs).
+  adAccountRef      String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Not in the originally provided schema — added Day 6 for the closure
+  // workflow's readiness check (POST /close-check), same pattern as
+  // adAccountActive/badgeNumber gating Day 5's ready-check.
+  nonWorkerIdDeactivatedAt DateTime?
+  badgeReturnedAt          DateTime?
+
+  // Not in the originally provided schema — added Day 6. FR-18's mentor
+  // confirmation gate: a certificate request can't be made until the
+  // mentor has recorded these.
+  mentorCompletionConfirmedAt DateTime?
+  mentorCompletionSatisfactory Boolean?
+  mentorCompletionRemark      String?
+
+  // Not in the originally provided schema — added Day 6 for the two-step
+  // certificate approval (candidate requests, HR approves, HR generates).
+  certificateRequestedAt DateTime?
+  certificateApprovedAt  DateTime?
+  certificateApprovedBy  String?
+
+  documents         Document[]
+  tasks             Task[]
+  checkIns          CheckIn[]
+  certificate       Certificate?
+  joiningRecord     JoiningRecord?
+  credentialTokens  CredentialToken[]
+  notificationLogs  NotificationLog[]
+}
+
+model JoiningRecord {
+  id              String   @id @default(cuid())
+  candidateId     String   @unique
+  candidate       Candidate @relation(fields: [candidateId], references: [id])
+  // Not in the originally provided schema — the joining form is gated by
+  // Internship.status (JOINING_PENDING to create, etc.), so it needs a
+  // direct link rather than traversing Candidate -> Referral -> Internship
+  // on every request.
+  internshipId    String?  @unique
+  internship      Internship? @relation(fields: [internshipId], references: [id])
+
+  // Made nullable vs. the originally provided schema (which had these as
+  // required) to support save-draft semantics: POST /joining-forms creates
+  // an empty draft, PATCH fills it incrementally, and only POST .../submit
+  // enforces these as mandatory at the application level.
+  address         String?
+  emergencyContactName String?
+  emergencyContactPhone String?
+  govtIdType      String?
+  govtIdNumber    String?  // stored encrypted; masked on read
+  educationHistory Json?
+  employmentHistory Json?
+  // Not in the originally provided schema — added for the Day 3 smart
+  // validation check (DOB must match the Candidate's DOB from intake).
+  dob             DateTime?
+
+  consentVersion  String?
+  consentedAt     DateTime?
+  // Not in the originally provided schema — distinguishes "still drafting"
+  // (submittedAt null, any field editable) from "submitted, awaiting HR"
+  // (edits blocked except via the correctionFields allowlist below).
+  submittedAt     DateTime?
+  // Not in the originally provided schema — same RETURN_FOR_CORRECTION
+  // pattern as Referral.correctionFields.
+  correctionFields String[] @default([])
+  locked          Boolean  @default(false)
+  lockedAt        DateTime?
+  lockedBy        String?
+
+  createdAt       DateTime @default(now())
+}
+
+model Document {
+  id            String   @id @default(cuid())
+  internshipId  String
+  internship    Internship @relation(fields: [internshipId], references: [id])
+  type          DocumentType
+  storageUri    String
+  sha256        String
+  signedAt      DateTime?
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+
+  // Not in the originally provided schema — added Day 4 for the NDA e-sign
+  // flow. providerRef is the ESignAdapter's opaque handle for an in-flight
+  // signature request (ManualESignAdapter fakes one; a real DocuSign/Adobe
+  // Sign adapter would return theirs). signatureMeta captures the
+  // typed-name/checkbox e-signature triple (name, timestamp, ip) when the
+  // candidate signs without uploading a wet-signed PDF.
+  providerRef   String?
+  signatureMeta Json?
+
+  // Not in the originally provided schema — added Day 4 (frontend) for
+  // POST /internships/:id/nda/expire: HR can invalidate an unsigned NDA
+  // and issue a fresh one, giving the candidate a new signing window.
+  expiredAt     DateTime?
+}
+
+// Not in the originally provided schema — added Day 5 for secure credential
+// delivery (FR-13). tokenHash is the only thing at rest that identifies the
+// redemption link (hashed like a password, per the spec's "never plain-text"
+// requirement for the bearer token). mockUsername/mockPassword are the
+// ManualADAdapter's fake AD credentials — plaintext is acceptable here
+// because they're single-use, 24h-lived, and revoked on redemption; a real
+// adapter swap would need a real secrets story for this, not this table.
+model CredentialToken {
+  id            String   @id @default(cuid())
+  internshipId  String
+  internship    Internship @relation(fields: [internshipId], references: [id])
+  tokenHash     String
+  mockUsername  String
+  mockPassword  String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  reissueCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+model Task {
+  id            String   @id @default(cuid())
+  // internshipId was required in the originally provided schema, but SLA
+  // tasks that precede Internship creation (e.g. MENTOR_CONFIRM, which fires
+  // at referral submission) have nothing to point to yet — made optional and
+  // paired with an optional referralId so pre-Internship tasks attach there
+  // instead.
+  internshipId  String?
+  internship    Internship? @relation(fields: [internshipId], references: [id])
+  referralId    String?
+  referral      Referral? @relation(fields: [referralId], references: [id])
+  type          String   // e.g. MENTOR_CONFIRM, NON_WORKER_ID, AD_PROVISION, SITE_ACCESS, AD_DEACTIVATE
+  assigneeRole  Role
+  dueAt         DateTime
+  slaBreached   Boolean  @default(false)
+  escalationTier Int     @default(0)
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  // Not in the originally provided schema — added Day 5.
+  // payload: free-form data a task needs to carry (e.g. EXTENSION_REQUEST's
+  // requestedEndDate/justification and per-role approval flags) without a
+  // one-off column per task type.
+  payload             Json?
+  // delayReminderCount: DELAY_FOLLOWUP's reminder counter, incremented via
+  // POST /tasks/:id/remind; at 3 it triggers the Tier-2 escalation task.
+  delayReminderCount  Int  @default(0)
+
+  // Not in the originally provided schema — added Day 4 (frontend) for the
+  // Access Provisioning page's 4 sub-tracks on AD_PROVISION (Email/VPN/
+  // Repository/Internal Tools). Granular progress tracking only — ticking
+  // these never calls ADAdapter.provision() or transitions anything by
+  // itself; PATCH /tasks/:id/checklist just updates one item. Only
+  // AD_PROVISION tasks use this (initialized at creation in
+  // POST /internships/:id/nda/sign); every other task type leaves it null.
+  checklist           Json?
+}
+
+model CheckIn {
+  id            String   @id @default(cuid())
+  internshipId  String
+  internship    Internship @relation(fields: [internshipId], references: [id])
+  note          String
+  concernFlag   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model Certificate {
+  id              String   @id @default(cuid())
+  internshipId    String   @unique
+  internship      Internship @relation(fields: [internshipId], references: [id])
+  referenceNumber String   @unique
+  storageUri      String
+  issuedAt        DateTime @default(now())
+
+  // Not in the originally provided schema — added Frontend Day F5 for
+  // GET /certificates?status=issued (which reads revokedAt IS NULL) and
+  // POST /certificates/:id/revoke. Revoking never deletes the row — same
+  // "nothing gets hard-deleted" principle as everywhere else in this system.
+  revokedAt       DateTime?
+  revokedReason   String?
+}
+
+// Not in the originally provided schema — added for the match-scoring
+// add-on. One candidate can be evaluated more than once (a re-run, or
+// against a different job description), so this is a plain one-to-many off
+// Candidate, not a unique/one-to-one — GET /candidates/:id/evaluations
+// returns the list; search's `latestEvaluation` picks the newest.
+model Evaluation {
+  id             String   @id @default(cuid())
+  candidateId    String
+  candidate      Candidate @relation(fields: [candidateId], references: [id])
+  jobDescription String
+
+  // AI's advisory read (POST /candidates/:id/evaluate) — never written to
+  // by anything else, and never itself moves a candidate forward.
+  matchScore     Int      // 0-100
+  recommendation EvaluationRecommendation
+  strengths      String[]
+  weaknesses     String[]
+  aiSummary      String
+
+  // Human-entered rubric (PATCH /evaluations/:id/rubric), each 1-5,
+  // independent of matchScore — nullable until HR actually scores them.
+  rubricCommunication Int?
+  rubricTechnical     Int?
+  rubricExperience    Int?
+  rubricCulturalFit   Int?
+
+  // The human call (POST /evaluations/:id/decide) — the only field that
+  // actually moves a candidate forward. Deliberately a separate column
+  // from `recommendation`, not a default/override of it.
+  decision   EvaluationDecision?
+  decidedBy  String?
+  decidedAt  DateTime?
+
+  createdAt  DateTime @default(now())
+}
+
+model NotificationLog {
+  id            String   @id @default(cuid())
+  templateId    String
+  recipient     String
+  status        String   // sent, bounced, failed, delivered
+  sentAt        DateTime @default(now())
+
+  // Not in the originally provided schema — added for frontend Day F2's
+  // notification read-tracking (PATCH /notifications/:id/read, /read-all).
+  readAt        DateTime?
+
+  // Not in the originally provided schema — added Day 6.
+  // internshipId: traceability for the closure workflow's EMAIL_CORRECTION
+  // task (which internship's send bounced). providerId: EmailAdapter's
+  // returned message id, the only key the inbound webhook has to match a
+  // delivery event back to this row.
+  internshipId  String?
+  internship    Internship? @relation(fields: [internshipId], references: [id])
+  providerId    String?
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  role       Role?
+  action     String
+  entity     String
+  entityId   String
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+}
+
+// One row per AI call, covering ALL 9 AI actions (see AiActionType).
+// Every AI output is advisory only — humans approve/override, never auto-applied.
+model AiAction {
+  id            String       @id @default(cuid())
+  type          AiActionType
+  entity        String       // e.g. "Referral", "Candidate", "Task", "Internship"
+  entityId      String?
+  input         Json?        // what was sent to the model (resume text, prompt context)
+  output        Json         // structured result (parsed fields, scores, draft text, answer)
+  confidence    Float?       // 0-1, null for actions without a single confidence value
+  modelUsed     String       // e.g. "gpt-4o", "claude-sonnet-5"
+  humanOverride Boolean      @default(false)
+  overriddenBy  String?
+  overriddenAt  DateTime?
+  createdAt     DateTime     @default(now())
+
+  // Not in the originally provided schema — added Day 3 (frontend) for the
+  // Resume Analyzer's "History" tab (GET /ai-actions?mine=true): every AI
+  // call needs to know which user triggered it. Null for system-triggered
+  // actions (e.g. the SLA sweep's slaRiskPrediction, which has no human
+  // actor — same actorId:null convention as AuditEvent's SYSTEM_ACTOR).
+  actorId       String?
+  actor         User?        @relation(fields: [actorId], references: [id])
+}
