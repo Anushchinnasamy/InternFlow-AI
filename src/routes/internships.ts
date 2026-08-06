@@ -86,6 +86,7 @@ router.get("/", authenticate, requireRole(...PERMISSION_MATRIX.internship.read),
     const adProvisionTask = i.tasks.find((t) => t.type === "AD_PROVISION") ?? null;
     const siteAccessTask = i.tasks.find((t) => t.type === "SITE_ACCESS") ?? null;
     const exitChecklistTask = i.tasks.find((t) => t.type === "EXIT_CHECKLIST") ?? null;
+    const extensionRequestTask = i.tasks.find((t) => t.type === "EXTENSION_REQUEST" && !t.completedAt) ?? null;
     // Workflow Kanban's "owner" — the Task model only tracks an assignee
     // *role*, never a specific user, so this is a role badge ("Owner: HR"),
     // not a named person. First open task of any type is enough for a
@@ -140,6 +141,13 @@ router.get("/", authenticate, requireRole(...PERMISSION_MATRIX.internship.read),
             checklist: buildExitChecklist(i, exitChecklistTask.checklist),
             completedAt: exitChecklistTask.completedAt,
           }
+        : null,
+      // Surfaces the pending mentor-requested extension (if any) so
+      // Mentor/HR/Program Owner can all see the same live approval state —
+      // see POST /internships/:id/extend and POST /extensions/:taskId/decide
+      // for where this task is created and resolved.
+      extensionRequestTask: extensionRequestTask
+        ? { id: extensionRequestTask.id, payload: extensionRequestTask.payload }
         : null,
     };
   });
