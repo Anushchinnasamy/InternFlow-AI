@@ -37,9 +37,12 @@ export const PERMISSION_MATRIX = {
     // official, persisted-record path and stays HR-only.
     evaluateAdhoc: [Role.REFERRER, Role.HR],
     // Day 7 Candidate 360 — RBAC-scoped in-handler (MENTOR to own interns,
-    // REFERRER to own referrals; HR/PROGRAM_OWNER see everything).
-    search: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER],
-    view360: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER],
+    // REFERRER to own referrals; HR/PROGRAM_OWNER/LEGAL see everything).
+    // LEGAL added during manual role testing — they had joiningRecord.read
+    // (below) but no way to reach a specific candidate's record at all,
+    // since that page sources its data from this same 360 endpoint.
+    search: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER, Role.LEGAL],
+    view360: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER, Role.LEGAL],
     // Match-scoring add-on
     evaluate: [Role.HR],
     // MENTOR is scoped in-handler to their own candidates (same pattern as

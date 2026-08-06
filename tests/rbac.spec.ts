@@ -50,8 +50,8 @@ interface RouteCase {
 const ROUTES: RouteCase[] = [
   // candidates.ts
   { method: "post", path: "/candidates", allowed: [Role.REFERRER, Role.HR] },
-  { method: "get", path: "/candidates/search?q=x", allowed: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER] },
-  { method: "get", path: "/candidates/:id/360", allowed: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER] },
+  { method: "get", path: "/candidates/search?q=x", allowed: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER, Role.LEGAL] },
+  { method: "get", path: "/candidates/:id/360", allowed: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR, Role.REFERRER, Role.LEGAL] },
   { method: "post", path: "/candidates/:id/evaluate", allowed: [Role.HR] },
   { method: "get", path: "/candidates/:id/evaluations", allowed: [Role.HR, Role.PROGRAM_OWNER, Role.MENTOR] },
 
