@@ -413,6 +413,40 @@ router.patch("/:id/override", authenticate, requireRole(...PERMISSION_MATRIX.ref
   res.json(result);
 });
 
+// Referral.mentorId is set at creation, before any Internship row exists —
+// this is the one place a mentor can discover "what's waiting on me" without
+// already knowing a candidate's name to search for.
+router.get(
+  "/pending-confirmation",
+  authenticate,
+  requireRole(...PERMISSION_MATRIX.referral.pendingMentorConfirmation),
+  async (req, res) => {
+    const referrals = await prisma.referral.findMany({
+      where: { mentorId: req.user!.userId, status: InternshipStatus.SUBMITTED },
+      include: { candidate: true, referrer: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({
+      referrals: referrals.map((r) => ({
+        id: r.id,
+        candidateName: r.candidate.fullName,
+        candidateEmail: r.candidate.email,
+        referrerName: r.referrer.name,
+        projectTitle: r.projectTitle,
+        projectOverview: r.projectOverview,
+        proposedStart: r.proposedStart,
+        proposedEnd: r.proposedEnd,
+        site: r.site,
+        department: r.department,
+        priorRelationship: r.priorRelationship,
+        conflictDeclared: r.conflictDeclared,
+        createdAt: r.createdAt,
+      })),
+    });
+  }
+);
+
 const mentorConfirmSchema = z
   .object({
     decision: z.enum(["CONFIRM", "DECLINE"]),

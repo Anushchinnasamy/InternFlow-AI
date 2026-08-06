@@ -121,6 +121,7 @@ const ROUTES: RouteCase[] = [
   { method: "post", path: "/referrals/:id/hr-review", allowed: [Role.HR] },
   { method: "patch", path: "/referrals/:id/override", allowed: [Role.REFERRER, Role.HR] },
   { method: "post", path: "/referrals/:id/mentor-confirm", allowed: [Role.MENTOR] },
+  { method: "get", path: "/referrals/pending-confirmation", allowed: [Role.MENTOR] },
 
   // resumeParse.ts (mounted at /ai)
   { method: "post", path: "/ai/resume-parse", allowed: [Role.REFERRER, Role.HR] },

@@ -50,6 +50,13 @@ export const PERMISSION_MATRIX = {
     create: [Role.REFERRER, Role.HR],
     override: [Role.REFERRER, Role.HR],
     mentorConfirm: [Role.MENTOR],
+    // Frontend Day 9 gap fix — nothing anywhere (frontend or backend) let a
+    // mentor discover which referrals were awaiting their own confirmation;
+    // /candidates/search's MENTOR scope requires an Internship to already
+    // exist, which doesn't happen until mentor-confirm itself runs. Scoped
+    // directly off Referral.mentorId, which exists specifically for this
+    // pre-Internship case (see its own schema.prisma comment).
+    pendingMentorConfirmation: [Role.MENTOR],
     hrReview: [Role.HR],
     review: [Role.MENTOR, Role.HR],
     approve: [Role.HR, Role.PROGRAM_OWNER],
