@@ -4,6 +4,8 @@ Backend for managing the full lifecycle of an unpaid internship — referral thr
 
 Node.js + TypeScript + Express + Prisma + PostgreSQL. See `CLAUDE.md` for the full non-negotiable rules this codebase is built against (NDA gate, RBAC, audit-everything, PII masking, single state machine, adapter pattern for external systems).
 
+**Repos:** this one ([InternFlow-AI](https://github.com/Anushchinnasamy/InternFlow-AI)) is the backend. The client is a separate repo — [InternFlow-AI-Frontend](https://github.com/Anushchinnasamy/InternFlow-AI-Frontend) — not a monolith with this one, so it can be swapped/redeployed independently.
+
 ## The 17-step workflow, and which day built what
 
 ```
