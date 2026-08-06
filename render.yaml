@@ -3,7 +3,12 @@ services:
     name: internflow-backend
     runtime: node
     plan: free
-    buildCommand: npm install && npx prisma generate && npm run build
+    # --include=dev is required here: NODE_ENV=production (set below) makes
+    # `npm install` skip devDependencies by default, but typescript itself
+    # and @types/* (needed to actually run `tsc`) live there. Without this,
+    # the build fails with "implicitly has an 'any' type" errors on every
+    # Express handler param, since @types/express never got installed.
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
