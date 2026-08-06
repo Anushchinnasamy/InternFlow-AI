@@ -16,18 +16,40 @@ const NON_SUCCESS_FINISH_REASONS = new Set<FinishReason>([
   FinishReason.SPII,
 ]);
 
+// Thrown for anything that goes wrong talking to the AI provider itself
+// (quota exhaustion, rate limiting, transient outage) — deliberately
+// carries a clean, safe-to-display message. Found in manual testing: the
+// raw @google/genai SDK error's .message on a 429 IS the provider's full
+// JSON error body (quota metrics, retry hints, doc links), and app.ts's
+// generic error handler was dumping err.message straight into the API
+// response with zero sanitization — every AI-calling endpoint leaked this,
+// not just one. See app.ts's specific handling of this class.
+export class AiProviderError extends Error {
+  constructor(message: string, public readonly cause: unknown) {
+    super(message);
+    this.name = "AiProviderError";
+  }
+}
+
 export async function generateStructured<Schema extends z.ZodType>(
   schema: Schema,
   prompt: string
 ): Promise<z.infer<Schema>> {
-  const response = await gemini.models.generateContent({
-    model: AI_MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseJsonSchema: zodToJsonSchema(schema),
-    },
-  });
+  let response: Awaited<ReturnType<typeof gemini.models.generateContent>>;
+  try {
+    response = await gemini.models.generateContent({
+      model: AI_MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseJsonSchema: zodToJsonSchema(schema),
+      },
+    });
+  } catch (err) {
+    // The raw error is logged server-side (see app.ts) for real debugging —
+    // it just never reaches the client verbatim.
+    throw new AiProviderError("The AI service is temporarily unavailable (busy or rate-limited). Please try again shortly.", err);
+  }
 
   const finishReason = response.candidates?.[0]?.finishReason;
   if (finishReason && NON_SUCCESS_FINISH_REASONS.has(finishReason)) {

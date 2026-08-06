@@ -29,6 +29,7 @@ import aiActionsRouter from "./routes/aiActions";
 import usersRouter from "./routes/users";
 import certificatesRouter from "./routes/certificates";
 import { TransitionError } from "./lib/transition";
+import { AiProviderError } from "./lib/geminiStructured";
 
 export const app = express();
 
@@ -69,6 +70,14 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   }
   if (err instanceof TransitionError) {
     res.status(409).json({ error: err.message });
+    return;
+  }
+  if (err instanceof AiProviderError) {
+    // err.message is already a clean, client-safe string — the raw
+    // provider error (which can be a full JSON body with quota figures,
+    // retry hints, etc.) is logged here for debugging but never sent on.
+    console.error("AI provider error:", err.cause);
+    res.status(503).json({ error: err.message });
     return;
   }
   if (err instanceof Error) {
